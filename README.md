@@ -111,6 +111,7 @@ The .xml output files should look like this:
   - **index** -- Informational only. Ignored by parser.
   - **props1** and **props2** -- The .fms file contains 8 bytes of additional data for each string. The function of these bytes is unknown because they are all 0 in all observed sample .fms files. They are treated here as two 4-byte unsigned integers. If absent, will default to 0.
   - **text** -- The text of the string itself. See below for notes. If absent, will default to an empty string, with a stern warning.
+  - **nullrepeatcount** -- Indicates a series of multiple empty strings in a row. Makes xml files more readable when substantive entries are separated by long stretches of empty strings. (Do not add this property to non-empty strings.)
 
 **String Notes:**
 - Strings are utf-8 encoded. Make sure your text editor is set to utf-8.

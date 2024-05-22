@@ -61,6 +61,8 @@ class FMS:
         self.footersize = 0
         self.unknown6 = 0
         self.validflag = False
+        self.zerocounts = []
+        self.skips = []
 
         
     def read_fms(self, infilename):
@@ -180,6 +182,39 @@ class FMS:
             
         #print("Success!")
 
+    def check_empty_strings(self):
+        """Iterates through a python FMS object and flags instances of multiple empty strings in a row."""
+        
+        assert self.validflag, "This object has not been initialized with valid data."
+        
+        countingstate = False
+        firstindex = -1
+        emptycount = 0
+        emptysample = []
+        emptysample.append((0).to_bytes(1, byteorder="little", signed=False))
+        for i in range(self.stringcount):
+            self.zerocounts.append(0)
+            if self.stringdata[i] == emptysample:
+                emptycount += 1
+                if not countingstate:
+                    countingstate = True
+                    firstindex = i
+                    self.skips.append(False)
+                else:
+                    self.skips.append(True)
+            else:
+                self.skips.append(False)
+                if countingstate:
+                    #print(f"Found series of {emptycount} empty strings starting at index {firstindex}")
+                    countingstate = False
+                    self.zerocounts[firstindex] = emptycount
+                    firstindex = -1
+                    emptycount = 0
+        #if we got to the end during a series of empty strings, note the count
+        if countingstate:
+            self.zerocounts[firstindex] = emptycount
+                    
+        
 
     def screen_blarf(self):
         """Print the values saved in the python FMS object to the screen."""
@@ -208,6 +243,7 @@ class FMS:
         """Write a .fms file using the values saved in the python FMS object."""
         
         assert self.validflag, "This object has not been initialized with valid data."
+        
         with open(outfilename, "wb") as outfile:
             
             # write the header
@@ -259,6 +295,9 @@ class FMS:
         """Write an .xml file using the values saved in the python FMS object."""
         
         assert self.validflag, "This object has not been initialized with valid data."
+        
+        self.check_empty_strings()
+        
         with open(outfilename, "w", encoding="utf-8", newline="\u000A") as outfile:
             
             # write a prologue
@@ -286,18 +325,21 @@ class FMS:
             #write the strings
             outfile.write("    <stringlist>\n")
             for i in range(self.stringcount):
-                outfile.write("        <stringdata>\n")
-                outfile.write(f"            <index>{i}</index>\n")
-                outfile.write(f"            <props1>{self.prop1list[i]}</props1>\n")
-                outfile.write(f"            <props2>{self.prop2list[i]}</props2>\n")
-                # trim the null terminator since xml is allergic to them
-                if int.from_bytes(self.stringdata[i][-1], "little", signed=False) == 0:
-                    workingstring = b"".join(self.stringdata[i][:-1]).decode("utf-8")
-                else:
-                    workingstring = b"".join(self.stringdata[i]).decode("utf-8")
-                workingstring = escape_for_xml(workingstring);
-                outfile.write("".join(["            <text>", workingstring, "</text>\n"]))
-                outfile.write("        </stringdata>\n")
+                if not self.skips[i]:
+                    outfile.write("        <stringdata>\n")
+                    outfile.write(f"            <index>{i}</index>\n")
+                    outfile.write(f"            <props1>{self.prop1list[i]}</props1>\n")
+                    outfile.write(f"            <props2>{self.prop2list[i]}</props2>\n")
+                    # trim the null terminator since xml is allergic to them
+                    if int.from_bytes(self.stringdata[i][-1], "little", signed=False) == 0:
+                        workingstring = b"".join(self.stringdata[i][:-1]).decode("utf-8")
+                    else:
+                        workingstring = b"".join(self.stringdata[i]).decode("utf-8")
+                    workingstring = escape_for_xml(workingstring);
+                    outfile.write("".join(["            <text>", workingstring, "</text>\n"]))
+                    if self.zerocounts[i] > 1:
+                        outfile.write(f"            <nullrepeatcount>{self.zerocounts[i]}</nullrepeatcount>\n")
+                    outfile.write("        </stringdata>\n")
             outfile.write("    </stringlist>\n")
 
             outfile.write("</fms>")
@@ -456,8 +498,21 @@ class FMS:
                 tempbuffer = []
                 tempbuffer.append((0).to_bytes(1, byteorder="little", signed=False))
                 self.stringdata.append(tempbuffer.copy())
-                
+            
             stringsread += 1
+            
+            someelement = thisstring.find("nullrepeatcount")
+            if someelement is not None:
+                repeatcount = int(someelement.text)
+                if repeatcount > 1:
+                    #subtract 1 since we already pushed the entry for this string
+                    for i in range(repeatcount - 1):
+                        self.prop1list.append(0)
+                        self.prop2list.append(0)
+                        tempbuffer = []
+                        tempbuffer.append((0).to_bytes(1, byteorder="little", signed=False))
+                        self.stringdata.append(tempbuffer.copy())
+                        stringsread += 1
             
         # double check the string count
         if mustcountstrings:
