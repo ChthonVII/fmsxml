@@ -187,6 +187,10 @@ class FMS:
         
         assert self.validflag, "This object has not been initialized with valid data."
         
+        # clear the empty string data
+        self.zerocounts = []
+        self.skips = []
+        
         countingstate = False
         firstindex = -1
         emptycount = 0
